@@ -1,0 +1,54 @@
+import org.apache.spark.SparkConf
+import org.apache.spark.serializer.KryoSerializer
+import org.apache.sedona.core.serde.SedonaKryoRegistrator
+import org.apache.spark.SparkContext
+import org.apache.sedona.core.enums.FileDataSplitter 
+import org.apache.sedona.core.spatialRDD.PointRDD;
+import org.apache.sedona.core.enums.GridType;
+import org.apache.sedona.core.spatialOperator.JoinQuery;
+import org.locationtech.jts.geom.Envelope;
+import org.apache.sedona.core.spatialOperator.RangeQuery
+import org.apache.sedona.core.spatialRDD.SpatialRDD;
+import org.apache.sedona.core.spatialRDD.PolygonRDD;
+
+val conf = new SparkConf()
+conf.setAppName("SedonaExample")
+conf.setMaster("local[*]") 
+conf.set("spark.serializer", classOf[KryoSerializer].getName) 
+conf.set("spark.kryo.registrator", classOf[SedonaKryoRegistrator].getName)
+
+
+// creating the point rdd
+val pointRDDInputLocation = "./data.csv"
+val pointRDDOffset = 0 
+val pointRDDSplitter = FileDataSplitter.CSV
+val carryOtherAttributes = true 
+var objectRDD = new PointRDD(sc, pointRDDInputLocation, pointRDDOffset, pointRDDSplitter, carryOtherAttributes)
+val considerBoundaryIntersection = false 
+val usingIndex = false
+objectRDD.analyze()
+
+// creating the polygon rdd
+val polygonRDDInputLocation = "./data3.csv"
+val polygonRDDStartOffset = 0 // The coordinates start from Column 0
+val polygonRDDEndOffset = 9 // The coordinates end at Column 9
+val polygonRDDSplitter = FileDataSplitter.CSV
+val carryOtherAttributes = true // Carry Column 10 (hotel, gas, bar...)
+var ploygonRDD = new PolygonRDD(sc, polygonRDDInputLocation, polygonRDDStartOffset, polygonRDDEndOffset, polygonRDDSplitter, carryOtherAttributes)
+ploygonRDD.analyze()
+
+// spatial partitioning
+ploygonRDD.spatialPartitioning(GridType.KDBTREE)
+objectRDD.spatialPartitioning(ploygonRDD.getPartitioner)
+
+
+val result = JoinQuery.SpatialJoinQuery(objectRDD, ploygonRDD, usingIndex, considerBoundaryIntersection)
+result.collect()
+
+/*
+[
+    (POLYGON ((-88.221102 32.35078, -88.221102 32.35078, -88.221102 32.35078, -88.221102 32.35078, -88.221102 32.35078)),[POINT (-88.221102 32.35078)]), 
+    (POLYGON ((-88.175933 32.360763, -88.175933 32.360763, -88.175933 32.360763, -88.175933 32.360763, -88.175933 32.360763)),[POINT (-88.175933 32.360763)]), 
+    (POLYGON ((-88.388954 32.357073, -88.388954 32.357073, -88.388954 32.357073, -88.388954 32.357073, -88.388954 32.357073)),[POINT (-88.388954 32.357073)])
+]
+*/
